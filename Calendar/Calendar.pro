@@ -11,11 +11,13 @@ CONFIG += c++17
 SOURCES += \
     calendarview.cpp \
     main.cpp \
-    mainwindow.cpp
+    mainwindow.cpp \
+    eventdialog.cpp
 
 HEADERS += \
     calendarview.h \
-    mainwindow.h
+    mainwindow.h \
+    eventdialog.h
 
 FORMS += \
     mainwindow.ui

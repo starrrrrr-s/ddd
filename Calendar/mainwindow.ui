@@ -236,6 +236,25 @@
      <string>月视图</string>
     </property>
    </widget>
+   <widget class="QPushButton" name="newEventBtn">
+    <property name="geometry">
+     <rect>
+      <x>520</x>
+      <y>10</y>
+      <width>51</width>
+      <height>21</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <family>Agency FB</family>
+      <pointsize>20</pointsize>
+     </font>
+    </property>
+    <property name="text">
+     <string>+</string>
+    </property>
+   </widget>
   </widget>
  </widget>
  <resources/>
