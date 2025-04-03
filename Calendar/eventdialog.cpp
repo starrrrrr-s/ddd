@@ -4,7 +4,8 @@
 #include <QLabel>
 
 EventDialog::EventDialog(QWidget *parent) :
-    QDialog(parent)
+    QDialog(parent),
+    m_eventId(-1)  // -1 表示新事件
 {
     setWindowTitle(tr("编辑日程"));
     resize(400, 550);
@@ -16,6 +17,13 @@ EventDialog::EventDialog(QWidget *parent) :
     QDateTime now = QDateTime::currentDateTime();
     setStartDateTime(now);
     setEndDateTime(now.addSecs(3600)); // 默认1小时后
+}
+void EventDialog::setEventId(int id) {
+    m_eventId = id;
+}
+
+int EventDialog::eventId() const {
+    return m_eventId;
 }
 
 EventDialog::~EventDialog() {}

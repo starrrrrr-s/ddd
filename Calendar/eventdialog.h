@@ -12,6 +12,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QGroupBox>
+#include<QTime>
 
 class EventDialog : public QDialog
 {
@@ -44,6 +45,8 @@ public:
     void setReminder(const QString &reminder);
     void setSoundEnabled(bool enabled);
     void setNotes(const QString &notes);
+    void setEventId(int id);
+      int eventId() const;
 
 private slots:
     void updateTimeEditors();
@@ -62,6 +65,7 @@ private:
     QComboBox *m_reminderCombo;
     QCheckBox *m_soundCheck;
     QPlainTextEdit *m_noteEdit;
+    int m_eventId;
 
     void setupUI();
     void setupConnections();
