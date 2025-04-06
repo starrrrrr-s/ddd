@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>800</width>
+    <height>600</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>MainWindow</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <widget class="QStackedWidget" name="stackedWidget">
+    <property name="geometry">
+     <rect>
+      <x>0</x>
+      <y>50</y>
+      <width>801</width>
+      <height>411</height>
+     </rect>
+    </property>
+    <property name="currentIndex">
+     <number>0</number>
+    </property>
+    <widget class="QWidget" name="dayWidget">
+     <widget class="QTableWidget" name="dayView">
+      <property name="geometry">
+       <rect>
+        <x>0</x>
+        <y>30</y>
+        <width>801</width>
+        <height>371</height>
+       </rect>
+      </property>
+      <row/>
+      <column>
+       <property name="text">
+        <string>时间</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>事件</string>
+       </property>
+      </column>
+     </widget>
+     <widget class="QLabel" name="dayLabel">
+      <property name="geometry">
+       <rect>
+        <x>10</x>
+        <y>10</y>
+        <width>111</width>
+        <height>16</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>TextLabel</string>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="prevDayBtn">
+      <property name="geometry">
+       <rect>
+        <x>300</x>
+        <y>0</y>
+        <width>80</width>
+        <height>24</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>前一天</string>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="nextDayBtn">
+      <property name="geometry">
+       <rect>
+        <x>390</x>
+        <y>0</y>
+        <width>80</width>
+        <height>24</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>后一天</string>
+      </property>
+     </widget>
+    </widget>
+    <widget class="QWidget" name="weekWidget">
+     <widget class="QTableWidget" name="weekView">
+      <property name="geometry">
+       <rect>
+        <x>10</x>
+        <y>80</y>
+        <width>791</width>
+        <height>321</height>
+       </rect>
+      </property>
+      <row>
+       <property name="text">
+        <string>事件</string>
+       </property>
+      </row>
+      <row>
+       <property name="text">
+        <string>课程</string>
+       </property>
+      </row>
+      <column>
+       <property name="text">
+        <string>Sun</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Mon</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Tue</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Wed</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Thu</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Fri</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Sat</string>
+       </property>
+      </column>
+     </widget>
+     <widget class="QLabel" name="weekLabel">
+      <property name="geometry">
+       <rect>
+        <x>10</x>
+        <y>60</y>
+        <width>291</width>
+        <height>16</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>TextLabel</string>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="prevWeekBtn">
+      <property name="geometry">
+       <rect>
+        <x>340</x>
+        <y>50</y>
+        <width>80</width>
+        <height>24</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>上一周</string>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="nextWeekBtn">
+      <property name="geometry">
+       <rect>
+        <x>430</x>
+        <y>50</y>
+        <width>80</width>
+        <height>24</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>下一周</string>
+      </property>
+     </widget>
+    </widget>
+    <widget class="QWidget" name="monthWidget">
+     <widget class="QCalendarWidget" name="monthView">
+      <property name="geometry">
+       <rect>
+        <x>0</x>
+        <y>0</y>
+        <width>801</width>
+        <height>451</height>
+       </rect>
+      </property>
+     </widget>
+    </widget>
+   </widget>
+   <widget class="QPushButton" name="dayButton">
+    <property name="geometry">
+     <rect>
+      <x>730</x>
+      <y>10</y>
+      <width>51</width>
+      <height>24</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>日视图</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="weekButton">
+    <property name="geometry">
+     <rect>
+      <x>659</x>
+      <y>10</y>
+      <width>51</width>
+      <height>24</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>周视图</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="monthButton">
+    <property name="geometry">
+     <rect>
+      <x>589</x>
+      <y>10</y>
+      <width>51</width>
+      <height>24</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>月视图</string>
+    </property>
+   </widget>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
