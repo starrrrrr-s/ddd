@@ -1,5 +1,5 @@
 QT       += core gui
-
+QT += core gui sql widgets
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
 CONFIG += c++17
@@ -12,12 +12,16 @@ SOURCES += \
     calendarview.cpp \
     main.cpp \
     mainwindow.cpp \
-    eventdialog.cpp
+    eventdialog.cpp \
+    logindialog.cpp \
+    registerdialog.cpp
 
 HEADERS += \
     calendarview.h \
     mainwindow.h \
-    eventdialog.h
+    eventdialog.h \
+    logindialog.h \
+    registerdialog.h
 
 FORMS += \
     mainwindow.ui

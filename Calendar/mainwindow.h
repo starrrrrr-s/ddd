@@ -64,6 +64,7 @@ private:
     void showEventEditDialog(const CalendarEvent &event, bool isNew = false);
     void removeEvent(const QDateTime &startTime);
     QDate monthViewDateAt(const QPoint &pos) const;
+    QString currentUserPhone; // 当前登录用户
 
     // 添加以下成员变量
     QTimer *monthHoverTimer;

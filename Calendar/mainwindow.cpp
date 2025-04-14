@@ -13,6 +13,7 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
 
+
     // 初始化时间槽
     setupTimeSlots();
 
