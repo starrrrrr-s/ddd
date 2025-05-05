@@ -1,0 +1,15 @@
+release/calendarview.o
+release/databasemanager.o
+release/main.o
+release/mainwindow.o
+release/eventdialog.o
+release/LoginDialog.o
+release/RegisterDialog.o
+release/remindermanager.o
+release/moc_calendarview.o
+release/moc_databasemanager.o
+release/moc_mainwindow.o
+release/moc_eventdialog.o
+release/moc_LoginDialog.o
+release/moc_RegisterDialog.o
+release/moc_remindermanager.o

@@ -1,0 +1,15 @@
+debug/calendarview.o
+debug/databasemanager.o
+debug/main.o
+debug/mainwindow.o
+debug/eventdialog.o
+debug/LoginDialog.o
+debug/RegisterDialog.o
+debug/remindermanager.o
+debug/moc_calendarview.o
+debug/moc_databasemanager.o
+debug/moc_mainwindow.o
+debug/moc_eventdialog.o
+debug/moc_LoginDialog.o
+debug/moc_RegisterDialog.o
+debug/moc_remindermanager.o

@@ -5,6 +5,8 @@
 #include <QSqlQuery>
 #include <QMessageBox>
 #include <QDebug>
+#include <QMainWindow>
+
 
 bool initializeDatabase() {
     QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE");
@@ -28,23 +30,25 @@ bool initializeDatabase() {
     return true;
 }
 
-int main(int argc, char *argv[])
-{
+// main.cpp
+// main.cpp
+int main(int argc, char *argv[]) {
     QApplication a(argc, argv);
 
-    // 初始化数据库
+    // 使用指针动态分配
+    MainWindow *mainWindow = new MainWindow();
+    LoginDialog login(mainWindow);
+
     if (!initializeDatabase()) {
+        QMessageBox::critical(nullptr, "错误", "无法初始化数据库");
         return -1;
     }
-
-    // 显示登录对话框
-    LoginDialog loginDialog;
-    if (loginDialog.exec() != QDialog::Accepted) {
-        return 0; // 用户取消登录
+    if (login.exec() == QDialog::Accepted) {
+        mainWindow->show();
+        return a.exec();
     }
 
-    // 登录成功，显示主窗口
-    MainWindow w;
-    w.show();
-    return a.exec();
+    // 登录失败时删除 mainWindow
+    delete mainWindow;
+    return 0;
 }

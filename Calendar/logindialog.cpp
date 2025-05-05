@@ -1,14 +1,16 @@
 #include "logindialog.h"
 #include "registerdialog.h"
+#include "mainwindow.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFormLayout>
 #include <QPushButton>
+#include <QMainWindow>
 #include <QMessageBox>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
-
-LoginDialog::LoginDialog(QWidget *parent) : QDialog(parent)
+LoginDialog::LoginDialog(MainWindow *mainWindow, QWidget *parent)
+    : QDialog(parent), m_mainWindow(mainWindow)
 {
     setWindowTitle("用户登录");
     setFixedSize(400, 250);
@@ -83,7 +85,14 @@ LoginDialog::LoginDialog(QWidget *parent) : QDialog(parent)
 
     // 连接信号槽
     connect(loginButton, &QPushButton::clicked, this, &LoginDialog::onLoginClicked);
-    connect(registerButton, &QPushButton::clicked, this, &LoginDialog::onRegisterClicked);
+
+    connect(registerButton, &QPushButton::clicked, this, [this]() {
+        RegisterDialog registerDialog(this);
+        if (registerDialog.exec() == QDialog::Accepted) {
+            phoneEdit->setText(registerDialog.getPhone());
+            passwordEdit->clear();
+        }
+    });
 }
 
 QString LoginDialog::getPhone() const { return phoneEdit->text(); }
@@ -117,11 +126,19 @@ void LoginDialog::onLoginClicked()
     query.addBindValue(phone);
     query.addBindValue(password);
 
-    if(query.exec() && query.next()) {
+    if(query.exec() && query.next())
+    {
+        // 登录成功后设置当前用户
+        if (m_mainWindow) {
+            m_mainWindow->setCurrentUserPhone(phone);
+            m_mainWindow->loadEventsFromDatabase(); // 加载用户事件
+        }
         accept(); // 登录成功
-    } else {
-        errorLabel->setText("账号或密码错误");
     }
+    else
+    {
+            errorLabel->setText("账号或密码错误");
+        }
 }
 
 void LoginDialog::onRegisterClicked()

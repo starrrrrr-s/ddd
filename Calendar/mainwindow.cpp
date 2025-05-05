@@ -1,7 +1,8 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include <QHeaderView>
-
+#include <QMessageBox>
+#include <QDebug>
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
@@ -12,7 +13,29 @@ MainWindow::MainWindow(QWidget *parent)
     , deleteAction(new QAction(tr("删除"), this))
 {
     ui->setupUi(this);
+    // 初始化数据库
+       QSqlDatabase db = QSqlDatabase::database();
+       if (!db.isOpen()) {
+           db = QSqlDatabase::addDatabase("QSQLITE");
+           db.setDatabaseName("calendar.db");
+           if (!db.open()) {
+               QMessageBox::critical(this, "错误", "无法连接数据库！");
+               return;
+           }
+       }
 
+       // 在 MainWindow 构造函数中检查表结构
+       if (!db.tables().contains("events")) {
+           QSqlQuery query;
+           query.exec("CREATE TABLE events ("
+                     "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                     "user_phone TEXT NOT NULL,"
+                     "name TEXT NOT NULL,"
+                     "category TEXT NOT NULL,"
+                     "start_time DATETIME NOT NULL,"
+                     "end_time DATETIME NOT NULL,"
+                     "notes TEXT)");
+       }
 
     // 初始化时间槽
     setupTimeSlots();
@@ -64,6 +87,9 @@ MainWindow::MainWindow(QWidget *parent)
     // 周视图单元格点击事件
     connect(ui->weekView, &QTableWidget::cellClicked, this, &MainWindow::onWeekCellClicked);
 
+    // 日视图双击事件
+       connect(ui->dayView, &QTableWidget::cellDoubleClicked, this, &MainWindow::onDayCellClicked);
+
     // 连接信号和槽
     setupConnections();
 
@@ -86,7 +112,28 @@ MainWindow::MainWindow(QWidget *parent)
     // 连接添加事件按钮
     connect(ui->newEventBtn, &QPushButton::clicked, this, &MainWindow::onAddEventClicked);
 }
+void MainWindow::updateEventInDatabase(const CalendarEvent &event) {
+    QSqlDatabase db = QSqlDatabase::database();
+    if (!db.isOpen()) {
+        qDebug() << "Database not open";
+        return;
+    }
 
+    QSqlQuery query(db);
+    query.prepare("UPDATE events SET name=?, category=?, start_time=?, end_time=?, notes=? "
+                  "WHERE id=? AND user_phone=?");
+    query.addBindValue(event.name);
+    query.addBindValue(event.category);
+    query.addBindValue(event.start);
+    query.addBindValue(event.end);
+    query.addBindValue(event.notes);
+    query.addBindValue(event.id);
+    query.addBindValue(currentUserPhone);
+
+    if (!query.exec()) {
+        qDebug() << "Update event failed:" << query.lastError().text();
+    }
+}
 
 void MainWindow::showEventEditDialog(const CalendarEvent &event, bool isNew)
 {
@@ -96,20 +143,32 @@ void MainWindow::showEventEditDialog(const CalendarEvent &event, bool isNew)
     dialog.setStartDateTime(event.start);
     dialog.setEndDateTime(event.end);
     dialog.setNotes(event.notes);
+    dialog.setEventId(event.id);
 
     if (dialog.exec() == QDialog::Accepted) {
         CalendarEvent updatedEvent;
+        updatedEvent.id = dialog.eventId();
         updatedEvent.name = dialog.eventName();
         updatedEvent.category = dialog.eventCategory();
         updatedEvent.start = dialog.startDateTime();
         updatedEvent.end = dialog.endDateTime();
         updatedEvent.notes = dialog.notes();
 
-        if (!isNew) {
-            removeEvent(event.start);
+        if (isNew) {
+            updatedEvent.id = -1; // 确保新事件ID为-1
+                       events.append(updatedEvent);
+                       saveEventToDatabase(updatedEvent);
+        } else {
+            // 更新现有事件
+            for (int i = 0; i < events.size(); ++i) {
+                if (events[i].id == updatedEvent.id) {
+                    events[i] = updatedEvent;
+                    updateEventInDatabase(updatedEvent);
+                    break;
+                }
+            }
         }
 
-        events.append(updatedEvent);
         updateEventViews();
     }
 }
@@ -125,12 +184,12 @@ void MainWindow::removeEvent(const QDateTime &startTime)
 {
     for (int i = 0; i < events.size(); ++i) {
         if (events[i].start == startTime) {
+            deleteEventFromDatabase(events[i].id);
             events.removeAt(i);
             break;
         }
     }
 }
-
 // 上下文菜单显示
 void MainWindow::showContextMenu(const QPoint &pos)
 {
@@ -141,6 +200,12 @@ void MainWindow::showContextMenu(const QPoint &pos)
     if (!index.isValid()) return;
 
     contextMenuIndex = index;
+
+    if (table == ui->dayView && index.column() == 1) {
+           editAction->setEnabled(true);
+           deleteAction->setEnabled(true);
+       }
+
     contextMenu->exec(table->viewport()->mapToGlobal(pos));
     // 在 MainWindow 构造函数中修改连接方式
     connect(editAction, &QAction::triggered, this, [this]() {
@@ -186,6 +251,28 @@ void MainWindow::onEditEvent(const QModelIndex &index)
     }
 }
 
+void MainWindow::onDayCellClicked(int row, int column) {
+    if (column == 1) { // 只处理事件列
+        QTime slotTime = QTime::fromString(timeSlots[row], "HH:mm");
+        QDateTime start(currentDay, slotTime);
+
+        // 查找现有事件
+        for (auto &event : events) {
+            if (event.start >= start && event.start < start.addSecs(1800) &&
+                event.user_phone == currentUserPhone) {
+                showEventEditDialog(event);
+                return;
+            }
+        }
+
+        // 没有找到事件则创建新事件
+        CalendarEvent newEvent;
+        newEvent.start = start;
+        newEvent.end = start.addSecs(1800); // 默认半小时
+        newEvent.user_phone = currentUserPhone; // 设置当前用户
+        showEventEditDialog(newEvent, true);
+    }
+}
 // 删除事件
 void MainWindow::onDeleteEvent()
 {
@@ -212,7 +299,7 @@ void MainWindow::onDeleteEvent()
 }
 void MainWindow::setupTimeSlots()
 {
-    for (int hour = 8; hour < 22; hour++) {
+    for (int hour = 0; hour < 24; hour++) {
         timeSlots << QString("%1:00").arg(hour, 2, 10, QLatin1Char('0'));
         timeSlots << QString("%1:30").arg(hour, 2, 10, QLatin1Char('0'));
     }
@@ -233,6 +320,7 @@ void MainWindow::setDayView(QDate date)
 
     ui->dayView->setRowCount(timeSlots.size());
     ui->dayView->setColumnCount(2);
+    ui->dayView->verticalHeader()->setDefaultSectionSize(20);
 
     QStringList headers;
     headers << "时间" << "事件";
@@ -263,6 +351,10 @@ void MainWindow::setDayView(QDate date)
                 eventItem->setData(Qt::UserRole, QVariant::fromValue(event.start));
                 ui->dayView->setItem(row, 1, eventItem);
 
+                // 确保只显示当前用户的事件
+                           if(event.user_phone == currentUserPhone) {  // 需要确保CalendarEvent结构有user_phone字段
+                               QTableWidgetItem *eventItem = new QTableWidgetItem(event.name);
+
                 // 根据事件类别设置背景色
                 if (event.category == "生日") {
                     eventItem->setBackground(QColor(255, 230, 230));
@@ -277,6 +369,7 @@ void MainWindow::setDayView(QDate date)
     }
 }
 
+}
 void MainWindow::setWeekView(QDate date)
 {
     currentWeek = date.addDays(-date.dayOfWeek() + 1);
@@ -289,6 +382,7 @@ void MainWindow::setWeekView(QDate date)
     ui->weekView->setSelectionMode(QAbstractItemView::SingleSelection);
     ui->weekView->setRowCount(timeSlots.size());
     ui->weekView->setColumnCount(8);
+     ui->weekView->verticalHeader()->setDefaultSectionSize(20);
 
     for (int row = 0; row < timeSlots.size(); ++row) {
         QTableWidgetItem *timeItem = new QTableWidgetItem(timeSlots[row]);
@@ -352,6 +446,7 @@ void MainWindow::setWeekView(QDate date)
             }
         }
     }
+
 }
 void MainWindow::setupConnections()
 {
@@ -619,6 +714,75 @@ void MainWindow::onWeekCellClicked(int row, int column)
         removeEvent(currentEvent.start);
         updateEventViews();
     }
+}
+
+void MainWindow::loadEventsFromDatabase() {
+    events.clear();
+
+    QSqlDatabase db = QSqlDatabase::database();
+    if (!db.isOpen()) return;
+
+    QSqlQuery query(db);
+    query.prepare("SELECT * FROM events WHERE user_phone = ?");
+    query.addBindValue(currentUserPhone);
+
+    if (query.exec()) {
+        while (query.next()) {
+            CalendarEvent event;
+            event.id = query.value("id").toInt();
+            event.name = query.value("name").toString();
+            event.category = query.value("category").toString();
+            event.start = query.value("start_time").toDateTime();
+            event.end = query.value("end_time").toDateTime();
+            event.notes = query.value("notes").toString();
+            event.user_phone = query.value("user_phone").toString();  // 添加这行
+
+            events.append(event);
+        }
+    }
+    updateEventViews();
+}
+
+void MainWindow::saveEventToDatabase(const CalendarEvent &event) {
+    QSqlDatabase db = QSqlDatabase::database();
+    if (!db.isOpen()) return;
+
+    QSqlQuery query(db);
+    query.prepare("INSERT INTO events (user_phone, name, category, start_time, end_time, notes) "
+                 "VALUES (?, ?, ?, ?, ?, ?)");
+    query.addBindValue(currentUserPhone);  // 使用当前登录用户的手机号
+    query.addBindValue(event.name);
+    query.addBindValue(event.category);
+    query.addBindValue(event.start);
+    query.addBindValue(event.end);
+    query.addBindValue(event.notes);
+
+    query.exec();
+}
+
+void MainWindow::deleteEventFromDatabase(int eventId) {
+    QSqlDatabase db = QSqlDatabase::database();
+    if (!db.isOpen()) return;
+
+    QSqlQuery query(db);
+    query.prepare("DELETE FROM events WHERE id=? AND user_phone=?");
+    query.addBindValue(eventId);
+    query.addBindValue(currentUserPhone);
+
+    query.exec();
+}
+
+void MainWindow::deleteEventFromDatabase(const QDateTime &startTime)
+{
+    QSqlDatabase db = QSqlDatabase::database();
+    if (!db.isOpen()) return;
+
+    QSqlQuery query(db);
+    query.prepare("DELETE FROM events WHERE start_time = ? AND user_phone = ?");
+    query.addBindValue(startTime);
+    query.addBindValue(currentUserPhone);
+
+    query.exec();
 }
 MainWindow::~MainWindow()
 {

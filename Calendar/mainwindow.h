@@ -9,20 +9,22 @@
 #include <QAction>
 #include<QLabel>
 #include<QTimer>
-
+#include <QSqlDatabase>
+#include <QSqlQuery>
+#include <QSqlError>
 QT_BEGIN_NAMESPACE
 namespace Ui {
 class MainWindow;
 }
 QT_END_NAMESPACE
 struct CalendarEvent {
-    int id;  // 添加事件ID
-    QString name;
-    QString category;
-    QDateTime start;
-    QDateTime end;
-    QString notes;
-
+    int id;
+      QString name;
+      QString category;
+      QDateTime start;
+      QDateTime end;
+      QString notes;
+      QString user_phone;
     // 添加构造函数
     CalendarEvent() : id(-1) {}
 };
@@ -32,11 +34,14 @@ class MainWindow : public QMainWindow
 
 public:
     explicit MainWindow(QWidget *parent = nullptr);
-    ~MainWindow();
+        ~MainWindow();
     void setupConnections();
     void setWeekView(QDate date);
     void setDayView(QDate date);
     void setupTimeSlots();
+
+    void loadEventsFromDatabase();
+     void setCurrentUserPhone(const QString &phone) { currentUserPhone = phone; }
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -72,5 +77,13 @@ private:
     QLabel *eventTooltip;
 
     QList<CalendarEvent> events;
+    void onDayCellClicked(int row, int column);
+     void saveEventToDatabase(const CalendarEvent &event);
+     void updateEventInDatabase(const CalendarEvent &event);
+     void deleteEventFromDatabase(int eventId);
+     void deleteEventFromDatabase(const QDateTime &startTime);
+
+
+
 };
 #endif // MAINWINDOW_H

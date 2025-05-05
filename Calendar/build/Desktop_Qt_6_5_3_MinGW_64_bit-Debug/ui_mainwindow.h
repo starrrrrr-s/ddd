@@ -42,6 +42,9 @@ public:
     QPushButton *dayButton;
     QPushButton *weekButton;
     QPushButton *monthButton;
+    QPushButton *newEventBtn;
+    QPushButton *loginButton;
+    QPushButton *registerButton;
 
     void setupUi(QMainWindow *MainWindow)
     {
@@ -128,6 +131,19 @@ public:
         monthButton = new QPushButton(centralwidget);
         monthButton->setObjectName("monthButton");
         monthButton->setGeometry(QRect(589, 10, 51, 24));
+        newEventBtn = new QPushButton(centralwidget);
+        newEventBtn->setObjectName("newEventBtn");
+        newEventBtn->setGeometry(QRect(520, 10, 51, 21));
+        QFont font;
+        font.setFamilies({QString::fromUtf8("Microsoft YaHei UI")});
+        font.setPointSize(18);
+        newEventBtn->setFont(font);
+        loginButton = new QPushButton(centralwidget);
+        loginButton->setObjectName("loginButton");
+        loginButton->setGeometry(QRect(10, 10, 61, 24));
+        registerButton = new QPushButton(centralwidget);
+        registerButton->setObjectName("registerButton");
+        registerButton->setGeometry(QRect(80, 10, 61, 24));
         MainWindow->setCentralWidget(centralwidget);
 
         retranslateUi(MainWindow);
@@ -172,6 +188,9 @@ public:
         dayButton->setText(QCoreApplication::translate("MainWindow", "\346\227\245\350\247\206\345\233\276", nullptr));
         weekButton->setText(QCoreApplication::translate("MainWindow", "\345\221\250\350\247\206\345\233\276", nullptr));
         monthButton->setText(QCoreApplication::translate("MainWindow", "\346\234\210\350\247\206\345\233\276", nullptr));
+        newEventBtn->setText(QCoreApplication::translate("MainWindow", "+", nullptr));
+        loginButton->setText(QCoreApplication::translate("MainWindow", "\347\231\273\345\275\225", nullptr));
+        registerButton->setText(QCoreApplication::translate("MainWindow", "\346\263\250\345\206\214", nullptr));
     } // retranslateUi
 
 };
