@@ -1,786 +1,674 @@
+#include "setting.h"
+#include "translator.h"
 #include "mainwindow.h"
+#include "logindialog.h"
 #include "ui_mainwindow.h"
-#include <QHeaderView>
+#include "addeventdialog.h"
+#include "recurrentevent.h"
+#include "continuousevent.h"
+#include "daydetaildialog.h"
+#include "preferencedialog.h"
+#include "dateselectdialog.h"
+
+#include <QDir>
+#include <QProcess>
+#include <QFileInfo>
+#include <QDateEdit>
+#include <QFileDialog>
 #include <QMessageBox>
-#include <QDebug>
-MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent)
-    , ui(new Ui::MainWindow)
-    , currentDay(QDate::currentDate())
-    , currentWeek(currentDay.addDays(-currentDay.dayOfWeek() + 1))
-    , contextMenu(new QMenu(this))
-    , editAction(new QAction(tr("编辑"), this))
-    , deleteAction(new QAction(tr("删除"), this))
+#include <QDesktopWidget>
+#include <QSystemTrayIcon>
+
+using namespace std;
+
+static AbstractEvent* eventByAction;
+static EventLabelButton* eventLabelByAction;
+static QDate dateByAction;
+static DayWidget* dayWidgetByAction;
+//主窗体
+MainWindow::MainWindow(const QString& username, QWidget *parent) :
+    QMainWindow(parent),
+    ui(new Ui::MainWindow),
+    current_date(QDate::currentDate()),
+    username(username)
 {
+    Setting::UserDirectory = Const::USER_DIR + username + "/";
+    if (!QDir(Setting::UserDirectory).exists()) QDir::current().mkpath(Setting::UserDirectory);
+    Setting::LoadSetting(Setting::UserDirectory + Const::SETTING_FILE);
+    Translator::InstallToApplication(Setting::Language);
     ui->setupUi(this);
-    // 初始化数据库
-       QSqlDatabase db = QSqlDatabase::database();
-       if (!db.isOpen()) {
-           db = QSqlDatabase::addDatabase("QSQLITE");
-           db.setDatabaseName("calendar.db");
-           if (!db.open()) {
-               QMessageBox::critical(this, "错误", "无法连接数据库！");
-               return;
-           }
-       }
 
-       // 在 MainWindow 构造函数中检查表结构
-       if (!db.tables().contains("events")) {
-           QSqlQuery query;
-           query.exec("CREATE TABLE events ("
-                     "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-                     "user_phone TEXT NOT NULL,"
-                     "name TEXT NOT NULL,"
-                     "category TEXT NOT NULL,"
-                     "start_time DATETIME NOT NULL,"
-                     "end_time DATETIME NOT NULL,"
-                     "notes TEXT)");
-       }
+    QGuiApplication::setFont(Setting::InterfaceFont);
 
-    // 初始化时间槽
-    setupTimeSlots();
+    this->setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnBottomHint | Qt::Tool);
+    this->setAttribute(Qt::WA_TranslucentBackground);
 
-    // 初始化UI视图
-    setDayView(currentDay);
-    setWeekView(currentWeek);
+    this->setFont(Setting::InterfaceFont);
+    this->move((QApplication::desktop()->width()  - this->width())  / 2,
+               (QApplication::desktop()->height() - this->height()) / 2);
 
-    // 设置上下文菜单
-    contextMenu->addAction(editAction);
-    contextMenu->addAction(deleteAction);
+    corner_label = new QLabel(this);
+    corner_label->setFixedWidth(40);
+    corner_label->setStyleSheet("QLabel{background:white;}");
+    ui->layout_table->addWidget(corner_label, 0, 0, 1, 1);
 
-    // 设置表格的上下文菜单策略
-    ui->dayView->setContextMenuPolicy(Qt::CustomContextMenu);
-    ui->weekView->setContextMenuPolicy(Qt::CustomContextMenu);
+    for (int i = 0; i < Const::WEEK_DAYS; i++)
+    {
+        horizontal_header[i] = new LabelButton(this);
+        horizontal_header[i]->setAlignment(Qt::AlignCenter);
+        horizontal_header[i]->setFixedHeight(30);
+    }
+    for (int i = 0; i < Const::MONTH_WEEKS; i++)
+    {
+        vertical_header[i] = new LabelButton(this);
+        vertical_header[i]->setFixedWidth(40);
+        vertical_header[i]->setAlignment(Qt::AlignCenter);
 
-    // 确保表格可编辑
-    ui->weekView->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed);
-    ui->weekView->setSelectionMode(QAbstractItemView::SingleSelection);
-
-    // 初始化月视图悬停计时器
-    monthHoverTimer = new QTimer(this);
-    monthHoverTimer->setSingleShot(true);
-    monthHoverTimer->setInterval(3000); // 3秒
-
-    // 初始化事件提示框
-    eventTooltip = new QLabel(this);
-    eventTooltip->setWindowFlags(Qt::ToolTip | Qt::FramelessWindowHint);
-    eventTooltip->setStyleSheet("QLabel { background-color: white; border: 1px solid gray; padding: 5px; }");
-    eventTooltip->hide();
-
-    // 连接月视图信号
-    connect(ui->monthView, &QCalendarWidget::activated, [this](const QDate &date) {
-        setDayView(date);
-        ui->stackedWidget->setCurrentIndex(0);
-    });
-
-    connect(ui->monthView, &QCalendarWidget::clicked, [this](const QDate &date) {
-        monthHoverTimer->stop();
-        eventTooltip->hide();
-    });
-
-    // 自定义月视图单元格悬停检测
-    ui->monthView->setMouseTracking(true);
-    ui->monthView->installEventFilter(this);  // 直接为 monthView 安装事件过滤器
-
-    connect(monthHoverTimer, &QTimer::timeout, this, &MainWindow::onMonthHoverTimeout);
-
-    // 周视图单元格点击事件
-    connect(ui->weekView, &QTableWidget::cellClicked, this, &MainWindow::onWeekCellClicked);
-
-    // 日视图双击事件
-       connect(ui->dayView, &QTableWidget::cellDoubleClicked, this, &MainWindow::onDayCellClicked);
-
-    // 连接信号和槽
-    setupConnections();
-
-    // 连接上下文菜单信号
-    connect(ui->dayView, &QTableWidget::customContextMenuRequested,
-            this, &MainWindow::showContextMenu);
-    connect(ui->weekView, &QTableWidget::customContextMenuRequested,
-            this, &MainWindow::showContextMenu);
-
-    // 使用lambda表达式连接编辑动作
-    connect(editAction, &QAction::triggered, this, [this]() {
-        if (contextMenuIndex.isValid()) {
-            onEditEvent(contextMenuIndex);
+        for (int j = 0; j < 4; j++)
+        {
+            QWidget* empty = new QWidget(this);
+            if (!j) empty->setFixedHeight(25);
+            ui->layout_table->addWidget(empty, i * 4 + j + 1, 0, 1, 1);
         }
-    });
-
-    // 连接删除动作（修正后的连接语句）
-    connect(deleteAction, &QAction::triggered, this, &MainWindow::onDeleteEvent);
-
-    // 连接添加事件按钮
-    connect(ui->newEventBtn, &QPushButton::clicked, this, &MainWindow::onAddEventClicked);
+    }
+    for (int i = 0; i < Const::MONTH_WEEKS; i++)
+        for (int j = 0; j < Const::WEEK_DAYS; j++)
+        {
+            day_table[i][j] = new DayWidget(this);
+            connect(day_table[i][j], &DayWidget::clicked, this, &MainWindow::onShowDayDetail);
+            connect(day_table[i][j], &DayWidget::dropIn, this, &MainWindow::onAddFile);
+            connect(day_table[i][j], &QWidget::customContextMenuRequested, this, &MainWindow::onDayWidgetContextMenu);
+        }
+    createActions();
+    importData(QDir::currentPath() + "/" + Setting::UserDirectory + Const::USER_DATA_FILE);
+    loadTable();
 }
-void MainWindow::updateEventInDatabase(const CalendarEvent &event) {
-    QSqlDatabase db = QSqlDatabase::database();
-    if (!db.isOpen()) {
-        qDebug() << "Database not open";
+
+MainWindow::~MainWindow()
+{
+    clearAll();
+    delete ui;
+}
+
+static QPoint dragPosition;
+static bool isDrag;
+void MainWindow::mousePressEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton)
+    {
+        isDrag = true;
+        dragPosition = event->globalPos() - this->pos();
+    }
+    QWidget::mousePressEvent(event);
+}
+
+void MainWindow::mouseMoveEvent(QMouseEvent *event)
+{
+    if (!Setting::Movable) { event->ignore(); return; }
+    if (isDrag && event->buttons() == Qt::LeftButton && ui->toolBar->geometry().contains(event->pos()))
+    {
+        QGuiApplication::setOverrideCursor(Qt::SizeAllCursor);
+        move(event->globalPos() - dragPosition);
+    }
+    QWidget::mouseMoveEvent(event);
+}
+
+void MainWindow::mouseReleaseEvent(QMouseEvent* event)
+{
+    isDrag = false;
+    QGuiApplication::setOverrideCursor(Qt::ArrowCursor);
+    QWidget::mouseMoveEvent(event);
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    if (!QDir(Setting::UserDirectory).exists()) QDir::current().mkpath(Setting::UserDirectory);
+
+    exportData(QDir::currentPath() + "/" + Setting::UserDirectory + Const::USER_DATA_FILE);
+    QApplication::quit();
+}
+//为工具栏创建动作
+void MainWindow::createActions()
+{
+    action_show_day = new QAction(this);
+    action_add_event = new QAction(this);
+    action_edit_event = new QAction(this);
+    action_delete_event = new QAction(this);
+    action_delete_one_event = new QAction(this);
+
+    QMenu* user = new QMenu(username, this);
+    user->setIcon(QPixmap(":/icons/icons/user.png"));
+    user->addAction(ui->action_preference);
+    user->addSeparator();
+    user->addAction(ui->action_logout);
+
+    ui->toolBar->addAction(ui->action_menu);
+    ui->toolBar->addAction(ui->action_date);
+    ui->toolBar->addAction(ui->action_left);
+    ui->toolBar->addAction(ui->action_right);
+    ui->toolBar->addAction(ui->action_add);
+    ui->toolBar->addAction(ui->action_movable);
+    ui->toolBar->addWidget(ui->label_date);
+
+    QSystemTrayIcon* tray = new QSystemTrayIcon(this);
+    main_menu = new QMenu(this);
+    main_menu->addMenu(user);
+    main_menu->addSeparator();
+    main_menu->addAction(ui->action_import);
+    main_menu->addAction(ui->action_export);
+    main_menu->addSeparator();
+    main_menu->addAction(ui->action_dragDrop);
+    main_menu->addSeparator();
+    main_menu->addAction(ui->action_about);
+    main_menu->addSeparator();
+    main_menu->addAction(ui->action_exit);
+
+    tray->setIcon(QPixmap(":/icons/icons/calendar.ico"));
+    tray->setContextMenu(main_menu);
+    tray->setToolTip(tr("Calendar"));
+    tray->show();
+
+    connect(tray, &QSystemTrayIcon::activated, this, [this]()
+    {
+        this->activateWindow();
+        this->show();
+    });
+    connect(action_show_day, &QAction::triggered, this, &MainWindow::onShowDayDetail);
+    connect(action_add_event, &QAction::triggered, this, &MainWindow::onAddEvent);
+    connect(action_edit_event, &QAction::triggered, this, &MainWindow::onEditEvent);
+    connect(action_delete_event, &QAction::triggered, this, &MainWindow::onDeleteEvent);
+    connect(action_delete_one_event, &QAction::triggered, this, &MainWindow::onDeleteOneEvent);
+}
+//清除所有事件
+void MainWindow::clearAll()
+{
+    for (auto i : event_labels) i->deleteLater();
+    for (auto i : event_list) i->deleteLater();
+    event_labels.clear();
+    event_list.clear();
+    day_color.clear();
+}
+//加载表格
+void MainWindow::loadTable()
+{
+    ui->retranslateUi(this);
+    this->setWindowOpacity(Setting::Opacity / 10.0);
+
+    QGuiApplication::setFont(Setting::InterfaceFont);
+    QFont font = ui->label_date->font();
+    font.setFamily(Setting::InterfaceFont.family());
+    font.setPointSize(Setting::InterfaceFont.pointSize() * 2);
+    ui->label_date->setFont(font);
+    ui->label_date->setText(Translator::Locale(Setting::Language).toString(current_date, "MMMM yyyy"));
+
+    ui->action_movable->setToolTip(Setting::Movable ? tr("Fix") : tr("Move"));
+    ui->action_dragDrop->setChecked(Setting::EnableDragsAndDrops);
+    ui->layout_table->setSpacing(Setting::CellSpace);
+    ui->toolBar->setStyleSheet(QString("QToolBar{background:%1;}").arg(Setting::CellColor.light(140).name()));
+
+    for (int i = 0; i < Const::WEEK_DAYS; i++)
+    {
+        horizontal_header[i]->setText(Translator::Locale(Setting::Language).dayName(!i ? 7 : i, QLocale::ShortFormat));
+        horizontal_header[i]->SetBackgroundColor(Setting::CellColor.darker(135));
+        if (Const::IsWeekend(i))
+            horizontal_header[i]->SetTextColor(Qt::red);
+        else
+            horizontal_header[i]->SetTextColor(Qt::black);
+    }
+    if (Setting::ShowWeekNumber)
+    {
+        corner_label->setFixedWidth(40);
+        corner_label->setStyleSheet(QString("background:%1;").arg(Setting::CellColor.darker(140).name()));
+        for (int i = 0; i < Const::MONTH_WEEKS; i++)
+        {
+            vertical_header[i]->show();
+            vertical_header[i]->SetBackgroundColor(Setting::CellColor.darker(140));
+            vertical_header[i]->SetTextColor(Qt::black);
+        }
+    }
+    else
+    {
+        corner_label->setFixedWidth(0);
+        for (int i = 0; i < Const::MONTH_WEEKS; i++) vertical_header[i]->hide();
+    }
+
+    for (int i = 0; i < Const::WEEK_DAYS; i++)
+    {
+        int day = dayFromColumn(i);
+        ui->layout_table->addWidget(horizontal_header[day], 0, i + 1, 1, 1);
+    }
+
+    QDate first = current_date, day;
+    first.setDate(current_date.year(), current_date.month(), 1);
+    day = first.addDays(-first.dayOfWeek() + Setting::WeekFirstDay);
+    for (int i = 0; i < Const::MONTH_WEEKS; i++)
+    {
+        vertical_header[i]->setText(QString::number(day.addDays(6).weekNumber()));
+        ui->layout_table->addWidget(vertical_header[i], i * 4 + 1, 0, 4, 1);
+
+        for (int j = 0; j < Const::WEEK_DAYS; j++)
+        {
+            day_table[i][j]->ClearEvents();
+            day_table[i][j]->SetDate(day);
+            day_table[i][j]->setAcceptDrops(Setting::EnableDragsAndDrops);
+
+            bool isTransparent = day.month() != first.month();
+
+            if (day_color.find(day) != day_color.end())
+                day_table[i][j]->SetBackgroundThemeColor(day_color[day], isTransparent);
+            else
+                day_table[i][j]->SetBackgroundThemeColor(Setting::CellColor, isTransparent);
+
+            if (Const::IsWeekend(day.dayOfWeek()))
+                day_table[i][j]->SetTitleTextColor(Qt::red);
+            else
+                day_table[i][j]->SetTitleTextColor(Qt::black);
+
+            ui->layout_table->addWidget(day_table[i][j], i * 4 + 1, j + 1, 4, 1);
+            day = day.addDays(1);
+        }
+    }
+    loadEvents();
+    emit tableUpdated();
+}
+//加载事件
+void MainWindow::loadEvents()
+{
+    int eventCount[Const::MONTH_WEEKS][Const::WEEK_DAYS] = {0};
+    for (auto i : event_labels) i->deleteLater();
+    event_labels.clear();
+
+    for (auto i = event_list.rbegin(); i != event_list.rend(); i++)
+    {
+        AbstractEvent* event = *i;
+        for (int i = 0; i < Const::MONTH_WEEKS; i++)
+            for (int j = 0, span; span = 1, j < Const::WEEK_DAYS; j += span) if (event->InList(day_table[i][j]->Date()))
+            {
+                if (event->Type() == AbstractEvent::ContinuousEvent)
+                {
+                    for (span = 1; j + span < Const::WEEK_DAYS && event->InList(day_table[i][j + span]->Date()); span++);
+                }
+                else if (event->Type() == AbstractEvent::RecurrentEvent)
+                    span = 1;
+
+                int num = 0;
+                for (int k = 0; k < span; k++)
+                {
+                    num = max(num, eventCount[i][j + k]);
+                    day_table[i][j + k]->AddEvent(event);
+                }
+
+                if (num < 3)
+                {
+                    for (int k = 0; k < span; k++) eventCount[i][j + k] = num + 1;
+
+                    EventLabelButton* label = new EventLabelButton(event->Title(), event, this);
+                    label->setMaximumHeight(20);
+                    event_labels.push_back(label);
+                    label->setAcceptDrops(Setting::EnableDragsAndDrops);
+                    ui->layout_table->addWidget(label, i * 4 + num + 2, j + 1, 1, span);
+
+                    connect(label, &LabelButton::mouseLeave, this, [this]()
+                    {
+                        EventLabelButton* sender = static_cast<EventLabelButton*>(QObject::sender());
+                        for (auto i : event_labels)
+                            if (i->Event() == sender->Event()) i->ShowReleasedStyle();
+                    });
+                    connect(label, &LabelButton::mouseEnter, this, [this]()
+                    {
+                        EventLabelButton* sender = static_cast<EventLabelButton*>(QObject::sender());
+                        for (auto i : event_labels)
+                            if (i->Event() == sender->Event()) i->ShowEnterStyle();
+                    });
+                    connect(label, &LabelButton::pressed, this, [this]()
+                    {
+                        EventLabelButton* sender = static_cast<EventLabelButton*>(QObject::sender());
+                        for (auto i : event_labels)
+                            if (i->Event() == sender->Event()) i->ShowPressedStyle();
+                    });
+                    connect(label, &LabelButton::released, this, [this]()
+                    {
+                        EventLabelButton* sender = static_cast<EventLabelButton*>(QObject::sender());
+                        for (auto i : event_labels)
+                            if (i->Event() == sender->Event()) i->ShowReleasedStyle();
+                    });
+                }
+            }
+    }
+}
+//导入数据
+void MainWindow::importData(const QString& fileName, bool showMessageBox)
+{
+    QFile file(fileName);
+    if (!file.open(QIODevice::ReadOnly))
+    {
+        if (showMessageBox) QMessageBox::critical(0, tr("Fail to Import Data"), QString(tr("Cannot import data from \"%1\"!")).arg(fileName));
         return;
     }
 
-    QSqlQuery query(db);
-    query.prepare("UPDATE events SET name=?, category=?, start_time=?, end_time=?, notes=? "
-                  "WHERE id=? AND user_phone=?");
-    query.addBindValue(event.name);
-    query.addBindValue(event.category);
-    query.addBindValue(event.start);
-    query.addBindValue(event.end);
-    query.addBindValue(event.notes);
-    query.addBindValue(event.id);
-    query.addBindValue(currentUserPhone);
-
-    if (!query.exec()) {
-        qDebug() << "Update event failed:" << query.lastError().text();
+    QDataStream in(&file);
+    int size;
+    in >> size;
+    for (int i = 0; i < size; i++)
+    {
+        AbstractEvent* event;
+        in >> &event;
+        bool ok = true;
+        for (auto j : event_list)
+            if (j->MagicString() == event->MagicString()) ok = false;
+        if (ok) event_list.push_back(event);
     }
+    in >> size;
+    for (int i = 0; i < size; i++)
+    {
+        QDate date; QColor color;
+        in >> date >> color;
+        day_color[date] = color;
+    }
+    file.close();
 }
-
-void MainWindow::showEventEditDialog(const CalendarEvent &event, bool isNew)
+//导出数据
+void MainWindow::exportData(const QString& fileName, bool showMessageBox)
 {
-    EventDialog dialog(this);
-    dialog.setEventName(event.name);
-    dialog.setEventCategory(event.category);
-    dialog.setStartDateTime(event.start);
-    dialog.setEndDateTime(event.end);
-    dialog.setNotes(event.notes);
-    dialog.setEventId(event.id);
-
-    if (dialog.exec() == QDialog::Accepted) {
-        CalendarEvent updatedEvent;
-        updatedEvent.id = dialog.eventId();
-        updatedEvent.name = dialog.eventName();
-        updatedEvent.category = dialog.eventCategory();
-        updatedEvent.start = dialog.startDateTime();
-        updatedEvent.end = dialog.endDateTime();
-        updatedEvent.notes = dialog.notes();
-
-        if (isNew) {
-            updatedEvent.id = -1; // 确保新事件ID为-1
-                       events.append(updatedEvent);
-                       saveEventToDatabase(updatedEvent);
-        } else {
-            // 更新现有事件
-            for (int i = 0; i < events.size(); ++i) {
-                if (events[i].id == updatedEvent.id) {
-                    events[i] = updatedEvent;
-                    updateEventInDatabase(updatedEvent);
-                    break;
-                }
-            }
-        }
-
-        updateEventViews();
+    QFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly))
+    {
+        if (showMessageBox) QMessageBox::critical(0, tr("Fail to Export Data"), QString(tr("Cannot export data to \"%1\"!")).arg(fileName));
+        return;
     }
+
+    QDataStream out(&file);
+    out << (int)event_list.size();
+    for (auto i : event_list) out << i;
+    out << (int)day_color.size();
+    for (auto i : day_color) out << i.first << i.second;
+    file.close();
 }
-// 更新所有视图
-void MainWindow::updateEventViews()
+
+
+//显示标签文本 菜单
+void MainWindow::onDayWidgetContextMenu(const QPoint& pos)
 {
-    setDayView(currentDay);
-    setWeekView(currentWeek);
-}
+    DayWidget* sender = static_cast<DayWidget*>(QObject::sender());
+    if (!sender->rect().contains(pos)) return;
 
-// 删除事件
-void MainWindow::removeEvent(const QDateTime &startTime)
+    dayWidgetByAction = sender;
+    eventByAction = nullptr;
+    dateByAction = sender->Date();
+
+    action_add_event->setText(tr("&Add Event..."));
+    action_show_day->setText(tr("&Show All Events..."));
+
+    ColorMenu color_menu(tr("Backgruond &Color"), this);
+    color_menu.SetDefaultColor(sender->ThemeColor());
+
+    QMenu menu(this);
+    menu.addAction(action_add_event);
+    menu.addAction(action_show_day);
+    menu.addSeparator();
+    menu.addMenu(&color_menu);
+
+    menu.exec(QCursor::pos());
+
+    if (color_menu.ColorSelected())
+    {
+        day_color[dateByAction] = color_menu.SelectedColor();
+        loadTable();
+    }
+    dayWidgetByAction = nullptr;
+}
+//标签文本 对应的菜单项选中处理
+void MainWindow::onEventLabelContextMenu(const QPoint& pos)
 {
-    for (int i = 0; i < events.size(); ++i) {
-        if (events[i].start == startTime) {
-            deleteEventFromDatabase(events[i].id);
-            events.removeAt(i);
-            break;
-        }
+    EventLabelButton* label = static_cast<EventLabelButton*>(QObject::sender());
+    AbstractEvent* event = label->Event();
+    QPoint mousePos = label->pos() + pos;
+    if (!label->rect().contains(pos)) return;
+
+    eventLabelByAction = label;
+    eventByAction = event;
+
+    ColorMenu color_menu(tr("Backgruond &Color"), this);
+    color_menu.SetDefaultColor(label->BackgroundColor());
+
+    if (label->parent() == ui->centralWidget)
+    {
+        for (int i = 0; i < Const::MONTH_WEEKS; i++)
+            for (int j = 0; j < Const::WEEK_DAYS; j++)
+                if (day_table[i][j]->geometry().contains(mousePos))
+                    dateByAction = day_table[i][j]->Date();
     }
+
+    QMenu menu(this);
+    action_edit_event->setText(tr("&Edit Event"));
+    if (event->Type() == AbstractEvent::ContinuousEvent)
+    {
+        action_delete_event->setText(tr("&Remove Event"));
+
+        menu.addAction(action_edit_event);
+        menu.addSeparator();
+        menu.addAction(action_delete_event);
+        menu.addSeparator();
+        menu.addMenu(&color_menu);
+    }
+    else if (event->Type() == AbstractEvent::RecurrentEvent)
+    {
+        action_delete_event->setText(tr("Remove the Whole Event &Sequence"));
+        action_delete_one_event->setText(tr("Remove &Single Event"));
+
+        menu.addAction(action_edit_event);
+        menu.addSeparator();
+        menu.addAction(action_delete_event);
+        menu.addAction(action_delete_one_event);
+        menu.addSeparator();
+        menu.addMenu(&color_menu);
+    }
+
+    menu.exec(QCursor::pos());
+
+    if (color_menu.ColorSelected())
+    {
+        eventByAction->SetLabelColor(color_menu.SelectedColor());
+        loadTable();
+    }
+    eventLabelByAction = nullptr;
 }
-// 上下文菜单显示
-void MainWindow::showContextMenu(const QPoint &pos)
+//添加一个事件的事件
+void MainWindow::onAddEvent()
 {
-    QTableWidget *table = qobject_cast<QTableWidget*>(sender());
-    if (!table) return;
-
-    QModelIndex index = table->indexAt(pos);
-    if (!index.isValid()) return;
-
-    contextMenuIndex = index;
-
-    if (table == ui->dayView && index.column() == 1) {
-           editAction->setEnabled(true);
-           deleteAction->setEnabled(true);
-       }
-
-    contextMenu->exec(table->viewport()->mapToGlobal(pos));
-    // 在 MainWindow 构造函数中修改连接方式
-    connect(editAction, &QAction::triggered, this, [this]() {
-        if (contextMenuIndex.isValid()) {
-            onEditEvent(contextMenuIndex);
-        }
-    });
+    AddEventDialog dialog(dateByAction, this);
+    if (dialog.exec() == QDialog::Accepted)
+    {
+        event_list.push_back(dialog.GetEvent());
+        loadTable();
+    }
 }
-
-// 编辑事件
-void MainWindow::onEditEvent(const QModelIndex &index)
+//编辑件的事件
+void MainWindow::onEditEvent()
 {
-    QTableWidget *table = qobject_cast<QTableWidget*>(sender());
-    if (!table || !index.isValid()) return;
+    EventLabelButton* label = eventLabelByAction;
+    if (label == nullptr) label = static_cast<EventLabelButton*>(QObject::sender());
+    AbstractEvent* event = label->Event();
 
-    int row = index.row();
-    int col = index.column();
-
-    if (table == ui->dayView && col == 1) {
-        // 日视图编辑
-        QTime slotTime = QTime::fromString(timeSlots[row], "HH:mm");
-        QDateTime start(currentDay, slotTime);
-
-        for (const auto &event : events) {
-            if (event.start >= start && event.start < start.addSecs(1800)) {
-                showEventEditDialog(event);
-                return;
-            }
-        }
-    }
-    else if (table == ui->weekView && col > 0) {
-        // 周视图编辑
-        QTime slotTime = QTime::fromString(timeSlots[row], "HH:mm");
-        QDate eventDate = currentWeek.addDays(col - 1);
-        QDateTime start(eventDate, slotTime);
-
-        for (const auto &event : events) {
-            if (event.start >= start && event.start < start.addSecs(1800)) {
-                showEventEditDialog(event);
-                return;
-            }
-        }
-    }
+    AddEventDialog dialog(event, this);
+    if (dialog.exec() == QDialog::Accepted) loadTable();
 }
-
-void MainWindow::onDayCellClicked(int row, int column) {
-    if (column == 1) { // 只处理事件列
-        QTime slotTime = QTime::fromString(timeSlots[row], "HH:mm");
-        QDateTime start(currentDay, slotTime);
-
-        // 查找现有事件
-        for (auto &event : events) {
-            if (event.start >= start && event.start < start.addSecs(1800) &&
-                event.user_phone == currentUserPhone) {
-                showEventEditDialog(event);
-                return;
-            }
-        }
-
-        // 没有找到事件则创建新事件
-        CalendarEvent newEvent;
-        newEvent.start = start;
-        newEvent.end = start.addSecs(1800); // 默认半小时
-        newEvent.user_phone = currentUserPhone; // 设置当前用户
-        showEventEditDialog(newEvent, true);
-    }
-}
-// 删除事件
+//删除同一类标签的所有事件的事件
 void MainWindow::onDeleteEvent()
 {
-    QTableWidget *table = qobject_cast<QTableWidget*>(sender()->parent()->parent());
-    if (!table || !contextMenuIndex.isValid()) return;
-
-    int row = contextMenuIndex.row();
-    int col = contextMenuIndex.column();
-
-    if (table == ui->dayView && col == 1) {
-        // 日视图删除
-        QTime slotTime = QTime::fromString(timeSlots[row], "HH:mm");
-        QDateTime start(currentDay, slotTime);
-        removeEvent(start);
-    } else if (table == ui->weekView && col > 0) {
-        // 周视图删除
-        QTime slotTime = QTime::fromString(timeSlots[row], "HH:mm");
-        QDate eventDate = currentWeek.addDays(col - 1);
-        QDateTime start(eventDate, slotTime);
-        removeEvent(start);
-    }
-
-    updateEventViews();
-}
-void MainWindow::setupTimeSlots()
-{
-    for (int hour = 8; hour < 22; hour++) {
-        timeSlots << QString("%1:00").arg(hour, 2, 10, QLatin1Char('0'));
-        timeSlots << QString("%1:30").arg(hour, 2, 10, QLatin1Char('0'));
-    }
-    timeSlots << "22:00";
-}
-void MainWindow::onAddEventClicked()
-{
-    CalendarEvent newEvent;
-    newEvent.start = QDateTime::currentDateTime();
-    newEvent.end = newEvent.start.addSecs(3600); // 默认1小时
-
-    showEventEditDialog(newEvent, true);
-}
-void MainWindow::setDayView(QDate date)
-{
-    currentDay = date;
-    ui->dayLabel->setText(date.toString("yyyy-MM-dd dddd"));
-
-    ui->dayView->setRowCount(timeSlots.size());
-    ui->dayView->setColumnCount(2);
-
-    QStringList headers;
-    headers << "时间" << "事件";
-    ui->dayView->setHorizontalHeaderLabels(headers);
-
-    for (int row = 0; row < timeSlots.size(); ++row) {
-        QTableWidgetItem *timeItem = new QTableWidgetItem(timeSlots[row]);
-        timeItem->setFlags(timeItem->flags() & ~Qt::ItemIsEditable);
-        ui->dayView->setItem(row, 0, timeItem);
-
-        // 清除原有内容
-        if (ui->dayView->item(row, 1)) {
-            delete ui->dayView->item(row, 1);
-        }
-
-        // 显示该时间段的事件
-        QTime slotTime = QTime::fromString(timeSlots[row], "HH:mm");
-        QDateTime startDateTime(date, slotTime);
-        QDateTime endDateTime = startDateTime.addSecs(1800); // 半小时后
-
-        for (const auto &event : events) {
-            if (event.start.date() == date &&
-                ((event.start >= startDateTime && event.start < endDateTime) ||
-                 (event.end > startDateTime && event.end <= endDateTime) ||
-                 (event.start <= startDateTime && event.end >= endDateTime))) {
-
-                QTableWidgetItem *eventItem = new QTableWidgetItem(event.name);
-                eventItem->setData(Qt::UserRole, QVariant::fromValue(event.start));
-                ui->dayView->setItem(row, 1, eventItem);
-
-                // 确保只显示当前用户的事件
-                           if(event.user_phone == currentUserPhone) {  // 需要确保CalendarEvent结构有user_phone字段
-                               QTableWidgetItem *eventItem = new QTableWidgetItem(event.name);
-
-                // 根据事件类别设置背景色
-                if (event.category == "生日") {
-                    eventItem->setBackground(QColor(255, 230, 230));
-                } else if (event.category == "纪念日") {
-                    eventItem->setBackground(QColor(230, 255, 230));
-                } else {
-                    eventItem->setBackground(QColor(230, 230, 255));
-                }
-                break;
-            }
-        }
-    }
-}
-}
-void MainWindow::setWeekView(QDate date)
-{
-    currentWeek = date.addDays(-date.dayOfWeek() + 1);
-    QDate sunday = currentWeek.addDays(6);
-    ui->weekLabel->setText(currentWeek.toString("yyyy-MM-dd") + " ~ " + sunday.toString("yyyy-MM-dd"));
-
-
-    // 确保表格可编辑
-    ui->weekView->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed);
-    ui->weekView->setSelectionMode(QAbstractItemView::SingleSelection);
-    ui->weekView->setRowCount(timeSlots.size());
-    ui->weekView->setColumnCount(8);
-
-    for (int row = 0; row < timeSlots.size(); ++row) {
-        QTableWidgetItem *timeItem = new QTableWidgetItem(timeSlots[row]);
-        ui->weekView->setVerticalHeaderItem(row, timeItem);
-    }
-
-    QStringList headers;
-    headers << "时间";
-    for (int i = 0; i < 7; i++) {
-        headers << currentWeek.addDays(i).toString("MM-dd ddd");
-    }
-    ui->weekView->setHorizontalHeaderLabels(headers);
-
-    ui->weekView->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    ui->weekView->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
-    ui->weekView->verticalHeader()->setDefaultSectionSize(40);
-    ui->weekView->setEditTriggers(QAbstractItemView::NoEditTriggers);
-
-    // 设置第一列（时间列）不可编辑
-    for (int row = 0; row < timeSlots.size(); ++row) {
-        QTableWidgetItem *item = new QTableWidgetItem(timeSlots[row]);
-        item->setFlags(item->flags() & ~Qt::ItemIsEditable);
-        ui->weekView->setItem(row, 0, item);
-    }
-
-    // 填充周视图中的事件
-    for (int day = 0; day < 7; day++) {
-        QDate currentDate = currentWeek.addDays(day);
-
-        for (int row = 0; row < timeSlots.size(); row++) {
-            QTime slotTime = QTime::fromString(timeSlots[row], "HH:mm");
-            QDateTime startDateTime(currentDate, slotTime);
-            QDateTime endDateTime = startDateTime.addSecs(1800); // 半小时后
-
-            // 清除原有内容
-            if (ui->weekView->item(row, day + 1)) {
-                delete ui->weekView->item(row, day + 1);
-            }
-
-            // 查找这个时间段的所有事件
-            for (const auto &event : events) {
-                if (event.start.date() == currentDate &&
-                    event.start.time() >= slotTime &&
-                    event.start.time() < slotTime.addSecs(1800)) {
-
-                    QTableWidgetItem *eventItem = new QTableWidgetItem(event.name);
-                    eventItem->setFlags(eventItem->flags() | Qt::ItemIsEditable);
-
-                    // 根据事件类别设置背景色
-                    if (event.category == "生日") {
-                        eventItem->setBackground(QColor(255, 230, 230));
-                    } else if (event.category == "纪念日") {
-                        eventItem->setBackground(QColor(230, 255, 230));
-                    } else {
-                        eventItem->setBackground(QColor(230, 230, 255));
-                    }
-
-                    ui->weekView->setItem(row, day + 1, eventItem);
-                    break;
-                }
-            }
-        }
-    }
-}
-void MainWindow::setupConnections()
-{
-    // 连接视图切换按钮
-    connect(ui->dayButton, &QPushButton::clicked, [this]() {
-        ui->stackedWidget->setCurrentIndex(0);
-    });
-    connect(ui->weekButton, &QPushButton::clicked, [this]() {
-        ui->stackedWidget->setCurrentIndex(1);
-    });
-    connect(ui->monthButton, &QPushButton::clicked, [this]() {
-        ui->stackedWidget->setCurrentIndex(2);
-    });
-
-    // 连接日期导航按钮
-    connect(ui->prevDayBtn, &QPushButton::clicked, [this]() {
-        setDayView(currentDay.addDays(-1));
-    });
-    connect(ui->nextDayBtn, &QPushButton::clicked, [this]() {
-        setDayView(currentDay.addDays(1));
-    });
-    connect(ui->prevWeekBtn, &QPushButton::clicked, [this]() {
-        setWeekView(currentWeek.addDays(-7));
-    });
-    connect(ui->nextWeekBtn, &QPushButton::clicked, [this]() {
-        setWeekView(currentWeek.addDays(7));
-    });
-    connect(ui->newEventBtn, &QPushButton::clicked, [this]() {
-
-    });
-    connect(ui->dayView, &QTableWidget::cellDoubleClicked, [this](int row, int col) {
-        if (col == 1) { // 只有事件列可编辑
-            QTime slotTime = QTime::fromString(timeSlots[row], "HH:mm");
-            QDateTime start(currentDay, slotTime);
-            QDateTime end = start.addSecs(1800);
-
-            // 查找并编辑现有事件
-            for (auto &event : events) {
-                if (event.start >= start && event.start < end) {
-                    EventDialog dialog(this);
-                    dialog.setEventName(event.name);
-                    dialog.setEventCategory(event.category);
-                    dialog.setStartDateTime(event.start);
-                    dialog.setEndDateTime(event.end);
-                    dialog.setNotes(event.notes);
-
-                    if (dialog.exec() == QDialog::Accepted) {
-                        event.name = dialog.eventName();
-                        event.category = dialog.eventCategory();
-                        event.start = dialog.startDateTime();
-                        event.end = dialog.endDateTime();
-                        event.notes = dialog.notes();
-
-                        setDayView(currentDay);
-                        setWeekView(currentWeek);
-                    }
-                    return;
-                }
-            }
-        }
-    });
-
-    connect(ui->weekView, &QTableWidget::cellDoubleClicked, [this](int row, int col) {
-        if (col > 0) { // 忽略时间列
-            QTime slotTime = QTime::fromString(timeSlots[row], "HH:mm");
-            QDate eventDate = currentWeek.addDays(col - 1);
-            QDateTime start(eventDate, slotTime);
-            QDateTime end = start.addSecs(1800);
-
-            // 查找并编辑现有事件
-            for (auto &event : events) {
-                if (event.start >= start && event.start < end) {
-                    EventDialog dialog(this);
-                    dialog.setEventName(event.name);
-                    dialog.setEventCategory(event.category);
-                    dialog.setStartDateTime(event.start);
-                    dialog.setEndDateTime(event.end);
-                    dialog.setNotes(event.notes);
-
-                    if (dialog.exec() == QDialog::Accepted) {
-                        event.name = dialog.eventName();
-                        event.category = dialog.eventCategory();
-                        event.start = dialog.startDateTime();
-                        event.end = dialog.endDateTime();
-                        event.notes = dialog.notes();
-
-                        setDayView(currentDay);
-                        setWeekView(currentWeek);
-                    }
-                    return;
-                }
-            }
-        }
-    });
-}
-bool MainWindow::eventFilter(QObject *watched, QEvent *event)
-{
-    if (watched == ui->monthView) {
-        if (event->type() == QEvent::MouseMove) {
-            QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
-            QDate date = monthViewDateAt(mouseEvent->pos());
-            if (date.isValid()) {
-                onMonthCellEntered(date);
-            }
-        } else if (event->type() == QEvent::Leave) {
-            monthHoverTimer->stop();
-            eventTooltip->hide();
-        }
-    }
-    return QMainWindow::eventFilter(watched, event);
-}
-QDate MainWindow::monthViewDateAt(const QPoint &pos) const
-{
-    // 获取月视图的几何信息
-    QRect rect = ui->monthView->geometry();
-    if (!rect.contains(pos)) return QDate();
-
-    // 计算每个单元格的大小
-    QSize cellSize = ui->monthView->size() / 6; // 大约6行
-
-    // 获取当前显示的月份
-    QDate currentDate = ui->monthView->selectedDate();
-    QDate firstOfMonth(currentDate.year(), currentDate.month(), 1);
-    int firstDayOfWeek = firstOfMonth.dayOfWeek();
-
-    // 计算点击的单元格
-    int row = pos.y() / cellSize.height();
-    int col = pos.x() / cellSize.width();
-    int day = (row * 7) + col - firstDayOfWeek + 2;
-
-    // 检查日期是否在当前月份
-    if (day < 1 || day > firstOfMonth.daysInMonth()) {
-        return QDate();
-    }
-
-    return QDate(currentDate.year(), currentDate.month(), day);
-}
-void MainWindow::onMonthCellEntered(const QDate &date)
-{
-    hoveredDate = date;
-    monthHoverTimer->start();
-}
-
-void MainWindow::onMonthHoverTimeout()
-{
-    QList<CalendarEvent> dayEvents;
-    for (const auto &event : events) {
-        if (event.start.date() == hoveredDate) {
-            dayEvents.append(event);
-        }
-    }
-
-    if (!dayEvents.isEmpty()) {
-        QString tooltipText = "<b>" + hoveredDate.toString("yyyy-MM-dd") + "</b><br>";
-        for (const auto &event : dayEvents) {
-            tooltipText += QString("%1 - %2: %3<br>")
-                .arg(event.start.time().toString("HH:mm"))
-                .arg(event.end.time().toString("HH:mm"))
-                .arg(event.name);
-        }
-        eventTooltip->setText(tooltipText);
-
-        // 获取鼠标位置并显示提示框
-        QPoint pos = QCursor::pos();
-        eventTooltip->move(pos.x() + 15, pos.y() + 15);
-        eventTooltip->adjustSize();
-        eventTooltip->show();
-    } else {
-        eventTooltip->hide();
-    }
-}
-void MainWindow::showWeekCellContextMenu(const QPoint &pos)
-{
-    // 获取点击的单元格
-    QModelIndex index = ui->weekView->indexAt(pos);
-    if (!index.isValid()) return;
-
-    int row = index.row();
-    int col = index.column();
-
-    if (col == 0) return; // 忽略时间列
-
-    QTime slotTime = QTime::fromString(timeSlots[row], "HH:mm");
-    QDate eventDate = currentWeek.addDays(col - 1);
-    QDateTime start(eventDate, slotTime);
-
-    // 创建上下文菜单
-    QMenu menu(this);
-    QAction *newAction = menu.addAction("新建");
-    QAction *editAction = menu.addAction("编辑");
-    QAction *deleteAction = menu.addAction("删除");
-
-    // 检查当前时间段是否有事件
-    bool hasEvent = false;
-    CalendarEvent currentEvent;
-    for (const auto &event : events) {
-        if (event.start >= start && event.start < start.addSecs(1800)) {
-            hasEvent = true;
-            currentEvent = event;
+    if (QMessageBox::question(this, tr("Remove Event"), QString(tr("Are you sure you want to remove the event \"%1\" and it's all attachments?")).arg(eventByAction->Title())) != QMessageBox::Yes)
+        return;
+    for (auto i = event_list.begin(); i != event_list.end(); i++)
+        if (*i == eventByAction)
+        {
+            (*i)->RemoveAllFiles();
+            delete *i;
+            event_list.erase(i);
             break;
         }
-    }
-
-    // 如果没有事件，禁用编辑和删除
-    editAction->setEnabled(hasEvent);
-    deleteAction->setEnabled(hasEvent);
-
-    // 执行菜单
-    QAction *selectedAction = menu.exec(ui->weekView->viewport()->mapToGlobal(pos));
-
-    if (selectedAction == newAction) {
-        CalendarEvent newEvent;
-        newEvent.start = start;
-        newEvent.end = start.addSecs(1800);
-        showEventEditDialog(newEvent, true);
-    } else if (selectedAction == editAction && hasEvent) {
-        showEventEditDialog(currentEvent, false);
-    } else if (selectedAction == deleteAction && hasEvent) {
-        removeEvent(currentEvent.start);
-        updateEventViews();
-    }
+    loadTable();
 }
-void MainWindow::onWeekCellClicked(int row, int column)
+//删除一个事件的事件
+void MainWindow::onDeleteOneEvent()
 {
-    if (column == 0) return; // 忽略时间列
+    if (eventByAction->Type() == AbstractEvent::RecurrentEvent)
+    {
+        RecurrentEvent* event = static_cast<RecurrentEvent*>(eventByAction);
+        event->AddSkip(dateByAction);
+    }
+    loadTable();
+}
+//显示当天所有事件
+void MainWindow::onShowDayDetail()
+{
+    DayWidget* sender = dayWidgetByAction;
+    if (sender == nullptr) sender = static_cast<DayWidget*>(QObject::sender());
+    DayDetailDialog dialog(sender, this);
 
-    QTime slotTime = QTime::fromString(timeSlots[row], "HH:mm");
-    QDate eventDate = currentWeek.addDays(column - 1);
-    QDateTime start(eventDate, slotTime);
+    dateByAction = sender->Date();
+    connect(this, &MainWindow::tableUpdated, &dialog, &DayDetailDialog::loadLabels);
 
-    // 创建上下文菜单
+    dialog.exec();
+}
+//添加文件
+void MainWindow::onAddFile(const QString& filePath)
+{
+    DayWidget* sender = static_cast<DayWidget*>(QObject::sender());
+
+    ContinuousEvent* event = new ContinuousEvent(sender->Date(), sender->Date());
+    event->SetTitle(QString(tr("File \"%2\"")).arg(QFileInfo(filePath).fileName()));
+    event->AddFile(filePath, this);
+    event_list.push_back(event);
+    loadTable();
+}
+//添加文件事件
+void MainWindow::onAddFileToEvent(const QString& filePath)
+{
+    EventLabelButton* sender = static_cast<EventLabelButton*>(QObject::sender());
+    sender->Event()->AddFile(filePath, this);
+    loadTable();
+}
+//菜单
+void MainWindow::on_action_menu_triggered()
+{
+    QRect rect = ui->toolBar->actionGeometry(ui->action_menu);
+    main_menu->exec(this->pos() + rect.bottomLeft());
+}
+//日期
+void MainWindow::on_action_date_triggered()
+{
     QMenu menu(this);
-    QAction *newAction = menu.addAction("新建");
-    QAction *editAction = menu.addAction("编辑");
-    QAction *deleteAction = menu.addAction("删除");
+    menu.addAction(ui->action_today);
+    menu.addSeparator();
+    menu.addAction(ui->action_select_date);
 
-    // 检查当前时间段是否有事件
-    bool hasEvent = false;
-    CalendarEvent currentEvent;
-    for (const auto &event : events) {
-        if (event.start >= start && event.start < start.addSecs(1800)) {
-            hasEvent = true;
-            currentEvent = event;
-            break;
-        }
-    }
-
-    // 如果没有事件，禁用编辑和删除
-    editAction->setEnabled(hasEvent);
-    deleteAction->setEnabled(hasEvent);
-
-    // 执行菜单
-    QPoint pos = ui->weekView->viewport()->mapToGlobal(
-        ui->weekView->visualItemRect(ui->weekView->item(row, column)).bottomLeft());
-    QAction *selectedAction = menu.exec(pos);
-
-    if (selectedAction == newAction) {
-        CalendarEvent newEvent;
-        newEvent.start = start;
-        newEvent.end = start.addSecs(1800); // 默认半小时
-        showEventEditDialog(newEvent, true);
-    } else if (selectedAction == editAction && hasEvent) {
-        showEventEditDialog(currentEvent, false);
-    } else if (selectedAction == deleteAction && hasEvent) {
-        removeEvent(currentEvent.start);
-        updateEventViews();
-    }
+    QRect rect = ui->toolBar->actionGeometry(ui->action_date);
+    menu.exec(this->pos() + rect.bottomLeft());
 }
-
-void MainWindow::loadEventsFromDatabase() {
-    events.clear();
-
-    QSqlDatabase db = QSqlDatabase::database();
-    if (!db.isOpen()) return;
-
-    QSqlQuery query(db);
-    query.prepare("SELECT * FROM events WHERE user_phone = ?");
-    query.addBindValue(currentUserPhone);
-
-    if (query.exec()) {
-        while (query.next()) {
-            CalendarEvent event;
-            event.id = query.value("id").toInt();
-            event.name = query.value("name").toString();
-            event.category = query.value("category").toString();
-            event.start = query.value("start_time").toDateTime();
-            event.end = query.value("end_time").toDateTime();
-            event.notes = query.value("notes").toString();
-            event.user_phone = query.value("user_phone").toString();  // 添加这行
-
-            events.append(event);
-        }
-    }
-    updateEventViews();
-}
-
-void MainWindow::saveEventToDatabase(const CalendarEvent &event) {
-    QSqlDatabase db = QSqlDatabase::database();
-    if (!db.isOpen()) return;
-
-    QSqlQuery query(db);
-    query.prepare("INSERT INTO events (user_phone, name, category, start_time, end_time, notes) "
-                 "VALUES (?, ?, ?, ?, ?, ?)");
-    query.addBindValue(currentUserPhone);  // 使用当前登录用户的手机号
-    query.addBindValue(event.name);
-    query.addBindValue(event.category);
-    query.addBindValue(event.start);
-    query.addBindValue(event.end);
-    query.addBindValue(event.notes);
-
-    query.exec();
-}
-
-void MainWindow::deleteEventFromDatabase(int eventId) {
-    QSqlDatabase db = QSqlDatabase::database();
-    if (!db.isOpen()) return;
-
-    QSqlQuery query(db);
-    query.prepare("DELETE FROM events WHERE id=? AND user_phone=?");
-    query.addBindValue(eventId);
-    query.addBindValue(currentUserPhone);
-
-    query.exec();
-}
-
-void MainWindow::deleteEventFromDatabase(const QDateTime &startTime)
+//日期向后
+void MainWindow::on_action_left_triggered()
 {
-    QSqlDatabase db = QSqlDatabase::database();
-    if (!db.isOpen()) return;
-
-    QSqlQuery query(db);
-    query.prepare("DELETE FROM events WHERE start_time = ? AND user_phone = ?");
-    query.addBindValue(startTime);
-    query.addBindValue(currentUserPhone);
-
-    query.exec();
+    current_date = current_date.addMonths(-1);
+    loadTable();
 }
-MainWindow::~MainWindow()
+//日期向前
+void MainWindow::on_action_right_triggered()
 {
-    delete ui;
+    current_date = current_date.addMonths(1);
+    loadTable();
+}
+//添加事件
+void MainWindow::on_action_add_triggered()
+{
+    if (current_date < QDate::currentDate())
+        dateByAction = QDate::currentDate();
+    else
+    {
+        dateByAction = current_date;
+        if (current_date.year() != QDate::currentDate().year() || current_date.month() !=  QDate::currentDate().month())
+            dateByAction.setDate(current_date.year(), current_date.month(), 1);
+    }
+    onAddEvent();
+}
+//拖动窗体
+void MainWindow::on_action_movable_triggered(bool checked)
+{
+    Setting::Movable = checked;
+    ui->action_movable->setToolTip(checked ? tr("Fix") : tr("Move"));
+}
+//导入
+void MainWindow::on_action_import_triggered()
+{
+    QString fileName = QFileDialog::getOpenFileName(this, tr("Import Data File"),
+                                                          QDir::currentPath() + "/" + Setting::UserDirectory + Const::USER_DATA_FILE,
+                                                          tr("Calendar Data File (*.cdat)"));
+    if (!fileName.isEmpty())
+    {
+        importData(fileName, true);
+        loadTable();
+    }
+}
+//导出
+void MainWindow::on_action_export_triggered()
+{
+    QString fileName = QFileDialog::getSaveFileName(this, tr("Export Data File"),
+                                                          QDir::homePath(),
+                                                          tr("Calendar Data File (*.cdat)"));
+    if (!fileName.isEmpty()) exportData(fileName, true);
+}
+//拖拽
+void MainWindow::on_action_dragDrop_triggered(bool checked)
+{
+    Setting::EnableDragsAndDrops = checked;
+    loadTable();
+}
+//偏好设置
+void MainWindow::on_action_preference_triggered()
+{
+    PreferenceDialog dialog(this);
+    if (dialog.exec() == QDialog::Accepted)
+    {
+        if (!QDir(Setting::UserDirectory).exists()) QDir::current().mkpath(Setting::UserDirectory);
+        Setting::SaveSetting(Setting::UserDirectory + Const::SETTING_FILE);
+        loadTable();
+    }
+}
+
+//关于
+void MainWindow::on_action_about_triggered()
+{
+    QMessageBox msgBox(this);
+    msgBox.setWindowTitle(tr("About LIFE PLAN"));
+    msgBox.setText(QString(tr(
+                      "<h2>LIFE PLAN<br/></h2>"
+                      "<p>基于 Qt 5.8.0<br/></p>"
+                      "<p>版本: %1</p>"
+                      "<p>创建时间: %2 - %3<br/></p>"
+                      )).arg("1.0.0").arg(__DATE__).arg(__TIME__));
+    msgBox.exec();
+}
+//回到今天
+void MainWindow::on_action_today_triggered()
+{
+    current_date = QDate::currentDate();
+    loadTable();
+}
+//日期选择
+void MainWindow::on_action_select_date_triggered()
+{
+    DateSelectDialog dialog(current_date, this);
+    if (dialog.exec() == QDialog::Accepted)
+    {
+        current_date = dialog.SelectedDate();
+        loadTable();
+    }
+}
+//登出账号
+void MainWindow::on_action_logout_triggered()
+{
+    if (!QDir(Setting::UserDirectory).exists()) QDir::current().mkpath(Setting::UserDirectory);
+    exportData(QDir::currentPath() + "/" + Setting::UserDirectory + Const::USER_DATA_FILE);
+
+    qApp->quit();
+    QProcess::startDetached(qApp->applicationFilePath(), QStringList());
 }

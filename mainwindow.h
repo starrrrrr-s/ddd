@@ -1,89 +1,95 @@
-// mainwindow.h
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#include "const.h"
+#include "setting.h"
+#include "colormenu.h"
+#include "daywidget.h"
+#include "abstractevent.h"
+
 #include <QMainWindow>
-#include <QDate>
-#include "eventdialog.h"  // 包含事件对话框头文件
-#include <QMenu>
-#include <QAction>
-#include<QLabel>
-#include<QTimer>
-#include <QSqlDatabase>
-#include <QSqlQuery>
-#include <QSqlError>
-QT_BEGIN_NAMESPACE
-namespace Ui {
+
+namespace Ui
+{
 class MainWindow;
 }
-QT_END_NAMESPACE
-struct CalendarEvent {
-    int id;
-      QString name;
-      QString category;
-      QDateTime start;
-      QDateTime end;
-      QString notes;
-      QString user_phone;
-    // 添加构造函数
-    CalendarEvent() : id(-1) {}
-};
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
 
 public:
-    explicit MainWindow(QWidget *parent = nullptr);
-        ~MainWindow();
-    void setupConnections();
-    void setWeekView(QDate date);
-    void setDayView(QDate date);
-    void setupTimeSlots();
+    explicit MainWindow(const QString& username, QWidget *parent = nullptr);
+    ~MainWindow();
 
-    void loadEventsFromDatabase();
-     void setCurrentUserPhone(const QString &phone) { currentUserPhone = phone; }
+public slots:
+    void onEventLabelContextMenu(const QPoint &pos);
+    void onAddFile(const QString &filePath);
+    void onAddFileToEvent(const QString &filePath);
+    void onAddEvent();
+    void onEditEvent();
+    void onDeleteEvent();
+    void onDeleteOneEvent();
 
 protected:
-    bool eventFilter(QObject *watched, QEvent *event) override;
-
-private slots:
-    void onAddEventClicked();  // 添加事件按钮点击槽函数
-    void onEditEvent(const QModelIndex &index);
-    void onDeleteEvent();
-    void showContextMenu(const QPoint &pos);
-    void onMonthCellEntered(const QDate &date);
-    void onMonthHoverTimeout();
-    void onWeekCellClicked(int row, int column);
-    void showWeekCellContextMenu(const QPoint &pos);
+    void closeEvent(QCloseEvent* event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
 
 private:
     Ui::MainWindow *ui;
-    QDate currentDay;
-    QDate currentWeek;
-    QStringList timeSlots;
-    QMenu *contextMenu;
-    QAction *editAction;
-    QAction *deleteAction;
-    QModelIndex contextMenuIndex;
-    void updateEventViews();
-    void showEventEditDialog(const CalendarEvent &event, bool isNew = false);
-    void removeEvent(const QDateTime &startTime);
-    QDate monthViewDateAt(const QPoint &pos) const;
-    QString currentUserPhone; // 当前登录用户
+    QDate current_date;
+    std::vector<EventLabelButton*> event_labels;
+    std::vector<AbstractEvent*> event_list;
+    std::map<QDate, QColor> day_color;
+    QString username;
 
-    // 添加以下成员变量
-    QTimer *monthHoverTimer;
-    QDate hoveredDate;
-    QLabel *eventTooltip;
+    QLabel* corner_label;
+    DayWidget* day_table[Const::MONTH_WEEKS][Const::WEEK_DAYS];
+    LabelButton* vertical_header[Const::MONTH_WEEKS];
+    LabelButton* horizontal_header[Const::WEEK_DAYS];
 
-    QList<CalendarEvent> events;
-    void onDayCellClicked(int row, int column);
-     void saveEventToDatabase(const CalendarEvent &event);
-     void updateEventInDatabase(const CalendarEvent &event);
-     void deleteEventFromDatabase(int eventId);
-     void deleteEventFromDatabase(const QDateTime &startTime);
+    QMenu* main_menu;
+    QAction *action_add_event, *action_edit_event, *action_show_day, *action_delete_event, *action_delete_one_event;
 
+    int dayFromColumn(int column) const { return (column + Setting::WeekFirstDay) % Const::WEEK_DAYS; }
+    int columnFromDay(int day) const { return (day - Setting::WeekFirstDay + Const::WEEK_DAYS) % Const::WEEK_DAYS; }
 
+    void createActions();
+    void clearAll();
+    void loadTable();
+    void loadEvents();
+    void importData(const QString &fileName, bool showMessageBox = false);
+    void exportData(const QString &fileName, bool showMessageBox = false);
+
+private slots:
+    void onDayWidgetContextMenu(const QPoint &pos);
+
+    void onShowDayDetail();
+
+    void on_action_menu_triggered();
+    void on_action_date_triggered();
+    void on_action_left_triggered();
+    void on_action_right_triggered();
+    void on_action_add_triggered();
+    void on_action_movable_triggered(bool checked);
+
+    void on_action_import_triggered();
+    void on_action_export_triggered();
+    void on_action_dragDrop_triggered(bool checked);
+    void on_action_about_triggered();
+
+    void on_action_today_triggered();
+    void on_action_select_date_triggered();
+
+    void on_action_preference_triggered();
+
+    void on_action_logout_triggered();
+
+signals:
+    void tableUpdated();
 
 };
+
 #endif // MAINWINDOW_H
