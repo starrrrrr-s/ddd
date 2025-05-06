@@ -1,33 +1,33 @@
 #ifndef LOGINDIALOG_H
 #define LOGINDIALOG_H
-#include <QMainWindow>
-#include "mainwindow.h"
+
 #include <QDialog>
-#include <QLineEdit>
-#include <QPushButton>
-#include <QLabel>
-#include <QSqlDatabase>
-#include <QSqlQuery>
-#include <QSqlError>
-class MainWindow;
+
+namespace Ui
+{
+class LoginDialog;
+}
+
 class LoginDialog : public QDialog
 {
     Q_OBJECT
 
 public:
-    explicit LoginDialog(MainWindow *mainWindow, QWidget *parent = nullptr);
-    QString getPhone() const;
-    QString getPassword() const;
+    explicit LoginDialog(QWidget *parent = nullptr);
+    ~LoginDialog();
+
+    QString Username() const { return username; }
 
 private slots:
-    void onLoginClicked();
-    void onRegisterClicked();
+    void on_pushButton_login_clicked();
+    void on_pushButton_register_clicked();
 
 private:
-    QLineEdit *phoneEdit;
-    QLineEdit *passwordEdit;
-    QLabel *errorLabel;
-    MainWindow *m_mainWindow;
+    Ui::LoginDialog *ui;
+    std::map<QString, QString> user_pswd;
+    QString username;
+
+    void loadUserData();
 };
 
 #endif // LOGINDIALOG_H

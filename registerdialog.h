@@ -2,30 +2,30 @@
 #define REGISTERDIALOG_H
 
 #include <QDialog>
-#include <QLineEdit>
-#include <QLabel>
+
+namespace Ui
+{
+class RegisterDialog;
+}
 
 class RegisterDialog : public QDialog
 {
     Q_OBJECT
 
 public:
-    explicit RegisterDialog(QWidget *parent = nullptr);
-    QString getPhone() const;
-    QString getPassword() const;
+    explicit RegisterDialog(const std::map<QString, QString>& userData, QWidget *parent = nullptr);
+    ~RegisterDialog();
 
-signals:
-    void registered(); // 添加注册成功信号
-
-private slots:
-    void onRegisterClicked();
+    QString Username() const { return username; }
+    QString Password() const { return password; }
 
 private:
-    QLineEdit *phoneEdit;
-    QLineEdit *passwordEdit;
-    QLineEdit *confirmPasswordEdit; // 添加确认密码输入框
-    QLabel *hintLabel;
-    QLabel *errorLabel;
+    Ui::RegisterDialog *ui;
+    std::map<QString, QString> user_pswd;
+    QString username, password;
+
+private slots:
+    void on_pushButton_create_clicked();
 };
 
 #endif // REGISTERDIALOG_H
