@@ -641,8 +641,8 @@ void MainWindow::on_action_about_triggered()
     msgBox.setWindowTitle(tr("About LIFE PLAN"));
     msgBox.setText(QString(tr(
                       "<h2>LIFE PLAN<br/></h2>"
-                      "<p>基于 Qt 5.12.0<br/></p>"
-                      "<p>版本: %2</p>"
+                      "<p>基于 Qt 5.8.0<br/></p>"
+                      "<p>版本: %1</p>"
                       "<p>创建时间: %2 - %3<br/></p>"
                       )).arg("1.0.0").arg(__DATE__).arg(__TIME__));
     msgBox.exec();
