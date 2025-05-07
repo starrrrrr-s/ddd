@@ -1,0 +1,25 @@
+<RCC>
+    <qresource prefix="/icons">
+        <file>icons/menu.png</file>
+        <file>icons/left.png</file>
+        <file>icons/right.png</file>
+        <file>icons/date.png</file>
+        <file>icons/add.png</file>
+        <file>icons/move.png</file>
+        <file>icons/setting.png</file>
+        <file>icons/about.png</file>
+        <file>icons/exit.png</file>
+        <file>icons/calendar.ico</file>
+        <file>icons/user.png</file>
+    </qresource>
+    <qresource prefix="/trans">
+        <file>trans/zh_CN.qm</file>
+        <file>trans/zh_CN.ts</file>
+        <file>trans/zh_TW.qm</file>
+        <file>trans/zh_TW.ts</file>
+        <file>trans/qt_zh_CN.qm</file>
+        <file>trans/qt_zh_TW.qm</file>
+        <file>trans/qt_zh_TW.ts</file>
+        <file>trans/qt_zh_CN.ts</file>
+    </qresource>
+</RCC>

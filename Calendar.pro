@@ -1,28 +1,68 @@
-QT       += core gui
+#-------------------------------------------------
+#
+# Project created by QtCreator 2016-08-22T22:28:35
+#
+#-------------------------------------------------
 
-greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
+QT       += core gui widgets xml
 
-CONFIG += c++17
+TARGET = Calendar
+TEMPLATE = app
 
-# You can make your code fail to compile if it uses deprecated APIs.
-# In order to do so, uncomment the following line.
-#DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
+CONFIG += c++11
 
-SOURCES += \
-    calendarview.cpp \
-    main.cpp \
+SOURCES += main.cpp\
     mainwindow.cpp \
-    eventdialog.cpp
+    daywidget.cpp \
+    labelbutton.cpp \
+    addeventdialog.cpp \
+    abstractevent.cpp \
+    continuousevent.cpp \
+    recurrentevent.cpp \
+    daydetaildialog.cpp \
+    colormenu.cpp \
+    filelistwidget.cpp \
+    dateselectdialog.cpp \
+    setting.cpp \
+    preferencedialog.cpp \
+    translator.cpp \
+    registerdialog.cpp \
+    logindialog.cpp
 
-HEADERS += \
-    calendarview.h \
-    mainwindow.h \
-    eventdialog.h
+HEADERS  += mainwindow.h \
+    daywidget.h \
+    const.h \
+    labelbutton.h \
+    addeventdialog.h \
+    abstractevent.h \
+    continuousevent.h \
+    recurrentevent.h \
+    daydetaildialog.h \
+    colormenu.h \
+    filelistwidget.h \
+    dateselectdialog.h \
+    setting.h \
+    preferencedialog.h \
+    translator.h \
+    registerdialog.h \
+    logindialog.h
 
-FORMS += \
-    mainwindow.ui
+FORMS    += forms/mainwindow.ui \
+    forms/addeventdialog.ui \
+    forms/weekrepeatwidget.ui \
+    forms/monthrepeatwidget.ui \
+    forms/yearrepeatwidget.ui \
+    forms/daydetaildialog.ui \
+    forms/dateselectdialog.ui \
+    forms/preferencedialog.ui \
+    forms/registerdialog.ui \
+    forms/logindialog.ui
 
-# Default rules for deployment.
-qnx: target.path = /tmp/$${TARGET}/bin
-else: unix:!android: target.path = /opt/$${TARGET}/bin
-!isEmpty(target.path): INSTALLS += target
+TRANSLATIONS += \
+    resource/trans/zh_CN.ts \
+    resource/trans/zh_TW.ts
+
+RESOURCES += \
+    resource/res.qrc
+
+RC_FILE = resource/icon.rc
